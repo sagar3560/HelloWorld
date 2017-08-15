@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+  <style>
+    body { margin:0;position:fixed;top:0;right:0;bottom:0;left:0; }
+    #output { 
+      width: 650px; height: 100%; overflow-y: scroll;
+    }
+    
+    #csvout {
+      width: 280px;
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+    }
+    
+    .row {
+      font-family: Courier;
+      font-size: 12px;
+      float: left;
+      clear: left;
+      margin: 5px;
+    }
+    .original {
+      float: left;
+      border: 1px solid black;
+      padding: 3px 5px;;
+    }
+    .geo {
+      float:left;
+      margin: 4px;
+      padding: 2px 4px;
+      border: 1px solid #efefef;
+      cursor: pointer;
+    }
+    .geo:hover {
+      background-color: #f3e4cd;
+    }
+    button {
+      position: absolute;
+      top: 5px;
+      right: 285px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="output"></div>
+  <textarea id="csvout"></textarea>
+  <button>Save</button>
+  <script>
+    d3.csv("the-counted.csv", function(err, data) {
+      
+      var test = data;
+      
+      test.forEach(function(d, i) {
+        var search = d.streetaddress + ", " + d.city + ", " + d.state;
+        d.search = search;
+        
+        setTimeout(function() {
+          var url = "https://search.mapzen.com/v1/search?text=" + search + "&api_key=search-4AcEJyM";
+          d3.json(url, function(err, geo) {
+            console.log("GEO", d, geo)
+            d.geo = geo;
+            
+            render(test);
+          })          
+        }, 1000 + i * 200)        
+      })
+      render(test);
+      
+      d3.select("button").on("click", function() {
+        var rows = []
+        var unprocessed = []
+        test.forEach(function(d) {
+          var r = JSON.parse(JSON.stringify(d))
+          var selected = r.selected;
+
+          delete r.geo;
+          delete r.selected;
+          if(selected) {
+            r.lat = selected.geometry.coordinates[1]
+            r.lng = selected.geometry.coordinates[0]
+            rows.push(r)
+          } else {
+            unprocessed.push(r)
+          }
+          
+        })
+        var csv = d3.csv.format(rows)
+        d3.select("#csvout").text(csv)
+        console.log("processed", rows.length)
+        console.log("unprocessed", unprocessed.length)
+      })
+
+    })
+    
+    function render(data) {
+      var rows = d3.select("#output").selectAll("div.row")
+        .data(data)
+      var rowEnter = rows.enter().append("div").classed("row", true)
+      
+      rowEnter.append("div").classed("original", true)
+        .text(function(d) { return d.search })
+        .on("click", function(d) {
+          console.log(d);
+        })
+      
+      var geos = rows
+        .filter(function(d) { return !!d.geo })
+        .selectAll("div.geo")
+        .data(function(d) {
+          var features = [];
+          d.geo.features.forEach(function(f) {
+            if(f.properties.region_a === d.state) features.push(f)
+          })
+          if(features.length) {
+            d.selected = features[0];
+          }
+          return features;
+        })
+      
+      geos.enter().append("div").classed("geo", true)
+      .on("click", function(g) {
+        var d = d3.select(this.parentNode).datum() 
+        d.selected = g;
+        console.log(d, g);
+        
+        geos.style("background-color", bgColor)
+      })
+      function bgColor(g){ 
+          var d = d3.select(this.parentNode).datum();
+          if(d.selected === g) {return "#efefef"}
+          return "white"
+      }
+      geos.style({
+        clear: function(g, i) { 
+          if(i === 0) return "left"
+          return;
+        },
+        "background-color": bgColor
+      })
+      geos.text(function(g) {
+        return g.properties.label
+      })
+    }
+  </script>
+</body>
